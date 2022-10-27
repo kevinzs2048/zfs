@@ -48,6 +48,23 @@
 #include <sys/string.h>
 #include <zfs_fletcher.h>
 
+#define PREF4X64L1(buffer, PREF_OFFSET, ITR) \
+	__asm__("PRFM PLDL1STRM, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 0)*64));
+
+#define PREF1KL1(buffer, PREF_OFFSET)  PREF4X64L1(buffer,(PREF_OFFSET), 0)
+
+#define PREF4X64L2(buffer, PREF_OFFSET, ITR) \
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 0)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 1)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 2)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 3)*64));
+
+#define PREF1KL2(buffer, PREF_OFFSET) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 0) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 4) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 8) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 12)
+
 ZFS_NO_SANITIZE_UNDEFINED
 static void
 fletcher_4_aarch64_neon_init(fletcher_4_ctx_t *ctx)
@@ -89,12 +106,8 @@ fletcher_4_aarch64_neon_fini(fletcher_4_ctx_t *ctx, zio_cksum_t *zcp)
 
 #define	NEON_DONT_REVERSE ""
 
-#define	NEON_MAIN_LOOP(REVERSE)				\
-	asm("ld1 { %[SRC].4s }, %[IP]\n"		\
-	REVERSE						\
-	"zip1 %[TMP1].4s, %[SRC].4s, %[ZERO].4s\n"	\
-	"zip2 %[TMP2].4s, %[SRC].4s, %[ZERO].4s\n"	\
-	"add %[ACC0].2d, %[ACC0].2d, %[TMP1].2d\n"	\
+#define	NEON_MAIN_LOOP()				\
+	asm("add %[ACC0].2d, %[ACC0].2d, %[TMP1].2d\n"	\
 	"add %[ACC1].2d, %[ACC1].2d, %[ACC0].2d\n"	\
 	"add %[ACC2].2d, %[ACC2].2d, %[ACC1].2d\n"	\
 	"add %[ACC3].2d, %[ACC3].2d, %[ACC2].2d\n"	\
@@ -103,10 +116,17 @@ fletcher_4_aarch64_neon_fini(fletcher_4_ctx_t *ctx, zio_cksum_t *zcp)
 	"add %[ACC2].2d, %[ACC2].2d, %[ACC1].2d\n"	\
 	"add %[ACC3].2d, %[ACC3].2d, %[ACC2].2d\n"	\
 	: [SRC] "=&w" (SRC),				\
-	[TMP1] "=&w" (TMP1), [TMP2] "=&w" (TMP2),	\
 	[ACC0] "+w" (ACC0), [ACC1] "+w" (ACC1),		\
 	[ACC2] "+w" (ACC2), [ACC3] "+w" (ACC3)		\
-	: [ZERO] "w" (ZERO), [IP] "Q" (*ip))
+	:[TMP1] "w" (TMP1), [TMP2] "w" (TMP2))
+
+#define	NEON_MAIN_LOOP_LOAD(REVERSE)			\
+	asm("ld1 { %[SRC].4s }, %[IP]\n"		\
+	REVERSE						\
+    "zip1 %[TMP1].4s, %[SRC].4s, %[ZERO].4s\n"	\
+	"zip2 %[TMP2].4s, %[SRC].4s, %[ZERO].4s\n"	\
+    : [SRC] "=&w" (SRC),[TMP1] "=&w" (TMP1), [TMP2] "=&w" (TMP2)	\
+    : [ZERO] "w" (ZERO), [IP] "Q" (*ip))
 
 #define	NEON_FINI_LOOP()			\
 	asm("st1 { %[ACC0].4s },%[DST0]\n"	\
@@ -150,9 +170,11 @@ unsigned char SRC __attribute__((vector_size(16)));
 
 	NEON_INIT_LOOP();
 
-	for (; ip < ipend; ip += 2) {
-		NEON_MAIN_LOOP(NEON_DONT_REVERSE);
-	}
+       for (; ip < ipend; ip += 2) {
+            NEON_MAIN_LOOP_LOAD(NEON_DONT_REVERSE);
+            PREF1KL1(ip, 1024)
+            NEON_MAIN_LOOP();
+       }
 
 	NEON_FINI_LOOP();
 
@@ -190,7 +212,9 @@ unsigned char SRC __attribute__((vector_size(16)));
 	NEON_INIT_LOOP();
 
 	for (; ip < ipend; ip += 2) {
-		NEON_MAIN_LOOP(NEON_DO_REVERSE);
+            NEON_MAIN_LOOP_LOAD(NEON_DO_REVERSE);
+            PREF1KL1(ip, 1024)
+            NEON_MAIN_LOOP();
 	}
 
 	NEON_FINI_LOOP();
