@@ -678,7 +678,7 @@ fletcher_4_benchmark_impl(boolean_t native, char *data, uint64_t data_size)
 	hrtime_t start;
 	uint64_t run_bw, run_time_ns, best_run = 0;
 	zio_cksum_t zc;
-	uint32_t i, l, sel_save = IMPL_READ(fletcher_4_impl_chosen);
+	uint32_t i, sel_save = IMPL_READ(fletcher_4_impl_chosen);
 
 	fletcher_checksum_func_t *fletcher_4_test = native ?
 	    fletcher_4_native : fletcher_4_byteswap;
@@ -692,12 +692,16 @@ fletcher_4_benchmark_impl(boolean_t native, char *data, uint64_t data_size)
 
 		kpreempt_disable();
 		start = gethrtime();
-		do {
-			for (l = 0; l < 32; l++, run_count++)
-				fletcher_4_test(data, data_size, NULL, &zc);
-
-			run_time_ns = gethrtime() - start;
-		} while (run_time_ns < FLETCHER_4_BENCH_NS);
+//		do {
+//			for (l = 0; l < 1; l++, run_count++) {
+//                fletcher_4_test(data, data_size, NULL, &zc);
+//                printk("====================RUN COUNT : %lld=================\n", run_count);
+//            }
+//
+//			run_time_ns = gethrtime() - start;
+//		} while (run_time_ns < FLETCHER_4_BENCH_NS);
+        fletcher_4_test(data, data_size, NULL, &zc);
+        run_time_ns = gethrtime() - start;
 		kpreempt_enable();
 
 		run_bw = data_size * run_count * NANOSEC;
