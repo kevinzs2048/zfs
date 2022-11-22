@@ -137,65 +137,63 @@ typedef struct v {
 	uint8_t b[ELEM_SIZE] __attribute__((aligned(ELEM_SIZE)));
 } v_t;
 
+#define PREF4X64L1(buffer, PREF_OFFSET, ITR) \
+	__asm__("PRFM PLDL1STRM, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 0)*64));
+
+#define PREF1KL1(buffer, PREF_OFFSET)  PREF4X64L1(buffer,(PREF_OFFSET), 0)
+
+#define PREF4X64L2(buffer, PREF_OFFSET, ITR) \
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 0)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 1)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 2)*64));\
+	__asm__("PRFM PLDL2KEEP, [%x[v],%[c]]"::[v]"r"(buffer), [c]"I"((PREF_OFFSET) + ((ITR) + 3)*64));
+
+#define PREF1KL2(buffer, PREF_OFFSET) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 0) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 4) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 8) \
+	PREF4X64L2(buffer,(PREF_OFFSET), 12)
+
 #define	XOR_ACC(src, r...)						\
 {									\
+    PREF1KL1(src, 1024);                     \
 	switch (REG_CNT(r)) {						\
 	case 8:								\
 		__asm(							\
-		"ld1 { v21.4s },%[SRC0]\n"				\
-		"ld1 { v20.4s },%[SRC1]\n"				\
-		"ld1 { v19.4s },%[SRC2]\n"				\
-		"ld1 { v18.4s },%[SRC3]\n"				\
-		"eor " VR0(r) ".16b," VR0(r) ".16b,v21.16b\n"		\
-		"eor " VR1(r) ".16b," VR1(r) ".16b,v20.16b\n"		\
-		"eor " VR2(r) ".16b," VR2(r) ".16b,v19.16b\n"		\
-		"eor " VR3(r) ".16b," VR3(r) ".16b,v18.16b\n"		\
-		"ld1 { v21.4s },%[SRC4]\n"				\
-		"ld1 { v20.4s },%[SRC5]\n"				\
-		"ld1 { v19.4s },%[SRC6]\n"				\
-		"ld1 { v18.4s },%[SRC7]\n"				\
-		"eor " VR4(r) ".16b," VR4(r) ".16b,v21.16b\n"		\
-		"eor " VR5(r) ".16b," VR5(r) ".16b,v20.16b\n"		\
-		"eor " VR6(r) ".16b," VR6(r) ".16b,v19.16b\n"		\
-		"eor " VR7(r) ".16b," VR7(r) ".16b,v18.16b\n"		\
+		"ld1 { v18.4s-v21.4s },%[SRC0]\n"				\
+		"eor " VR0(r) ".16b," VR0(r) ".16b,v18.16b\n"		\
+		"eor " VR1(r) ".16b," VR1(r) ".16b,v19.16b\n"		\
+		"eor " VR2(r) ".16b," VR2(r) ".16b,v20.16b\n"		\
+		"eor " VR3(r) ".16b," VR3(r) ".16b,v21.16b\n"		\
+		"ld1 { v18.4s-v21.4s },%[SRC1]\n"				\
+		"eor " VR4(r) ".16b," VR4(r) ".16b,v18.16b\n"		\
+		"eor " VR5(r) ".16b," VR5(r) ".16b,v19.16b\n"		\
+		"eor " VR6(r) ".16b," VR6(r) ".16b,v20.16b\n"		\
+		"eor " VR7(r) ".16b," VR7(r) ".16b,v21.16b\n"		\
 		:	UVR0(r), UVR1(r), UVR2(r), UVR3(r),		\
 			UVR4(r), UVR5(r), UVR6(r), UVR7(r)		\
 		:	[SRC0] "Q" (*(OFFSET(src, 0))),			\
-		[SRC1] "Q" (*(OFFSET(src, 16))),			\
-		[SRC2] "Q" (*(OFFSET(src, 32))),			\
-		[SRC3] "Q" (*(OFFSET(src, 48))),			\
-		[SRC4] "Q" (*(OFFSET(src, 64))),			\
-		[SRC5] "Q" (*(OFFSET(src, 80))),			\
-		[SRC6] "Q" (*(OFFSET(src, 96))),			\
-		[SRC7] "Q" (*(OFFSET(src, 112)))			\
+		[SRC1] "Q" (*(OFFSET(src, 64)))			\
 		:	"v18", "v19", "v20", "v21");			\
 		break;							\
 	case 4:								\
 		__asm(							\
-		"ld1 { v21.4s },%[SRC0]\n"				\
-		"ld1 { v20.4s },%[SRC1]\n"				\
-		"ld1 { v19.4s },%[SRC2]\n"				\
-		"ld1 { v18.4s },%[SRC3]\n"				\
-		"eor " VR0(r) ".16b," VR0(r) ".16b,v21.16b\n"		\
-		"eor " VR1(r) ".16b," VR1(r) ".16b,v20.16b\n"		\
-		"eor " VR2(r) ".16b," VR2(r) ".16b,v19.16b\n"		\
-		"eor " VR3(r) ".16b," VR3(r) ".16b,v18.16b\n"		\
+		"ld1 { v18.4s-v21.4s },%[SRC0]\n"				\
+		"eor " VR0(r) ".16b," VR0(r) ".16b,v18.16b\n"		\
+		"eor " VR1(r) ".16b," VR1(r) ".16b,v19.16b\n"		\
+		"eor " VR2(r) ".16b," VR2(r) ".16b,v20.16b\n"		\
+		"eor " VR3(r) ".16b," VR3(r) ".16b,v21.16b\n"		\
 		:	UVR0(r), UVR1(r), UVR2(r), UVR3(r)		\
-		:	[SRC0] "Q" (*(OFFSET(src, 0))),			\
-		[SRC1] "Q" (*(OFFSET(src, 16))),			\
-		[SRC2] "Q" (*(OFFSET(src, 32))),			\
-		[SRC3] "Q" (*(OFFSET(src, 48)))				\
+		:	[SRC0] "Q" (*(OFFSET(src, 0)))				\
 		:	"v18", "v19", "v20", "v21");			\
 		break;							\
 	case 2:								\
 		__asm(							\
-		"ld1 { v21.4s },%[SRC0]\n"				\
-		"ld1 { v20.4s },%[SRC1]\n"				\
-		"eor " VR0(r) ".16b," VR0(r) ".16b,v21.16b\n"		\
-		"eor " VR1(r) ".16b," VR1(r) ".16b,v20.16b\n"		\
+		"ld1 { v20.4s-v21.4s },%[SRC0]\n"				\
+		"eor " VR0(r) ".16b," VR0(r) ".16b,v20.16b\n"		\
+		"eor " VR1(r) ".16b," VR1(r) ".16b,v21.16b\n"		\
 		:	UVR0(r), UVR1(r)				\
-		:	[SRC0] "Q" (*(OFFSET(src, 0))),			\
-		[SRC1] "Q" (*(OFFSET(src, 16)))				\
+		:	[SRC0] "Q" (*(OFFSET(src, 0)))			\
 		:	"v20", "v21");					\
 		break;							\
 	default:							\
@@ -288,6 +286,7 @@ typedef struct v {
 
 #define	LOAD(src, r...)							\
 {									\
+    PREF1KL1(src, 1024);                     \
 	switch (REG_CNT(r)) {						\
 	case 8:								\
 		__asm(							\
