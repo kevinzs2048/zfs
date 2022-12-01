@@ -71,19 +71,49 @@ fletcher_4_aarch64_neon_fini(fletcher_4_ctx_t *ctx, zio_cksum_t *zcp)
 	ZIO_SET_CHECKSUM(zcp, A, B, C, D);
 }
 
+#define        NEON_INIT_LOOP2()                        \
+       asm("eor %[ZERO].16b,%[ZERO].16b,%[ZERO].16b\n" \
+       "ld1 { %[ACC0].4s }, %[CTX0]\n"         \
+       "ld1 { %[ACC1].4s }, %[CTX1]\n"         \
+       "ld1 { %[ACC2].4s }, %[CTX2]\n"         \
+       "ld1 { %[ACC3].4s }, %[CTX3]\n"         \
+       : [ZERO] "=w" (ZERO),                   \
+       [ACC0] "=w" (ACC0), [ACC1] "=w" (ACC1), \
+       [ACC2] "=w" (ACC2), [ACC3] "=w" (ACC3)  \
+       : [CTX0] "Q" (ctx->aarch64_neon[0]),    \
+        [CTX1] "Q" (ctx->aarch64_neon[1]),      \
+        [CTX2] "Q" (ctx->aarch64_neon[2]),      \
+        [CTX3] "Q" (ctx->aarch64_neon[3]))
+
 #define	NEON_INIT_LOOP()			\
-	asm("eor %[ZERO].16b,%[ZERO].16b,%[ZERO].16b\n"	\
-	"ld1 { %[ACC0].4s }, %[CTX0]\n"		\
-	"ld1 { %[ACC1].4s }, %[CTX1]\n"		\
-	"ld1 { %[ACC2].4s }, %[CTX2]\n"		\
-	"ld1 { %[ACC3].4s }, %[CTX3]\n"		\
-	: [ZERO] "=w" (ZERO),			\
-	[ACC0] "=w" (ACC0), [ACC1] "=w" (ACC1),	\
-	[ACC2] "=w" (ACC2), [ACC3] "=w" (ACC3)	\
-	: [CTX0] "Q" (ctx->aarch64_neon[0]),	\
+	asm("eor v0.16b,v0.16b,v0.16b\n"	\
+	"ld1 { v1.4s }, %[CTX0]\n"		\
+	"ld1 { v2.4s }, %[CTX1]\n"		\
+	"ld1 { v3.4s }, %[CTX2]\n"		\
+	"ld1 { v4.4s }, %[CTX3]\n"		\
+	: : [CTX0] "Q" (ctx->aarch64_neon[0]),	\
 	[CTX1] "Q" (ctx->aarch64_neon[1]),	\
 	[CTX2] "Q" (ctx->aarch64_neon[2]),	\
 	[CTX3] "Q" (ctx->aarch64_neon[3]))
+
+#define NEON_SUPERSCALAR8() \
+    asm("ldp q21, q20, %[IP]\n"		\
+        "uaddw   v19.2d, v19.2d, v21.2s\n"		\
+        "uaddw2  v18.2d, v18.2d, v21.4s\n"		\
+        "uaddw   v17.2d, v17.2d, v20.2s\n"		\
+        "uaddw2  v16.2d, v16.2d, v20.4s\n"		\
+        "add     v7.2d, v7.2d, v19.2d\n"		\
+        "add     v6.2d, v6.2d, v18.2d\n"		\
+        "add     v5.2d, v5.2d, v17.2d\n"		\
+        "add     v4.2d, v4.2d, v16.2d\n"		\
+        "add     v3.2d, v3.2d, v7.2d\n"		\
+        "add     v2.2d, v2.2d, v6.2d\n"		\
+        "add     v1.2d, v1.2d, v5.2d\n"		\
+        "add     v0.2d, v0.2d, v4.2d\n"		\
+        "add     v25.2d, v25.2d, v3.2d\n"		\
+        "add     v24.2d, v24.2d, v2.2d\n"		\
+        "add     v23.2d, v23.2d, v1.2d\n"		\
+        "add     v22.2d, v22.2d, v0.2d\n"::[IP] "Q" (*ip))
 
 #define	NEON_DO_REVERSE "rev32 %[SRC].16b, %[SRC].16b\n"
 
@@ -108,17 +138,27 @@ fletcher_4_aarch64_neon_fini(fletcher_4_ctx_t *ctx, zio_cksum_t *zcp)
 	[ACC2] "+w" (ACC2), [ACC3] "+w" (ACC3)		\
 	: [ZERO] "w" (ZERO), [IP] "Q" (*ip))
 
-#define	NEON_FINI_LOOP()			\
-	asm("st1 { %[ACC0].4s },%[DST0]\n"	\
-	"st1 { %[ACC1].4s },%[DST1]\n"		\
-	"st1 { %[ACC2].4s },%[DST2]\n"		\
-	"st1 { %[ACC3].4s },%[DST3]\n"		\
+#define	NEON_FINI_LOOP1()			\
+	asm("st1 { v1.4s },%[DST0]\n"	\
+	"st1 { v2.4s },%[DST1]\n"		\
+	"st1 { v3.4s },%[DST2]\n"		\
+	"st1 { v4.4s },%[DST3]\n"		\
 	: [DST0] "=Q" (ctx->aarch64_neon[0]),	\
 	[DST1] "=Q" (ctx->aarch64_neon[1]),	\
 	[DST2] "=Q" (ctx->aarch64_neon[2]),	\
 	[DST3] "=Q" (ctx->aarch64_neon[3])	\
-	: [ACC0] "w" (ACC0), [ACC1] "w" (ACC1),	\
-	[ACC2] "w" (ACC2), [ACC3] "w" (ACC3))
+	: )
+
+#define	NEON_FINI_LOOP2()			\
+	asm("st1 { v1.4s },%[DST0]\n"	\
+	"st1 { v2.4s },%[DST1]\n"		\
+	"st1 { v3.4s },%[DST2]\n"		\
+	"st1 { v4.4s },%[DST3]\n"		\
+	: [DST0] "=Q" (ctx->aarch64_neon[0]),	\
+	[DST1] "=Q" (ctx->aarch64_neon[1]),	\
+	[DST2] "=Q" (ctx->aarch64_neon[2]),	\
+	[DST3] "=Q" (ctx->aarch64_neon[3])	\
+	: )
 
 static void
 fletcher_4_aarch64_neon_native(fletcher_4_ctx_t *ctx,
@@ -126,35 +166,16 @@ fletcher_4_aarch64_neon_native(fletcher_4_ctx_t *ctx,
 {
 	const uint64_t *ip = buf;
 	const uint64_t *ipend = (uint64_t *)((uint8_t *)ip + size);
-#if defined(_KERNEL)
-register unsigned char ZERO asm("v0") __attribute__((vector_size(16)));
-register unsigned char ACC0 asm("v1") __attribute__((vector_size(16)));
-register unsigned char ACC1 asm("v2") __attribute__((vector_size(16)));
-register unsigned char ACC2 asm("v3") __attribute__((vector_size(16)));
-register unsigned char ACC3 asm("v4") __attribute__((vector_size(16)));
-register unsigned char TMP1 asm("v5") __attribute__((vector_size(16)));
-register unsigned char TMP2 asm("v6") __attribute__((vector_size(16)));
-register unsigned char SRC asm("v7") __attribute__((vector_size(16)));
-#else
-unsigned char ZERO __attribute__((vector_size(16)));
-unsigned char ACC0 __attribute__((vector_size(16)));
-unsigned char ACC1 __attribute__((vector_size(16)));
-unsigned char ACC2 __attribute__((vector_size(16)));
-unsigned char ACC3 __attribute__((vector_size(16)));
-unsigned char TMP1 __attribute__((vector_size(16)));
-unsigned char TMP2 __attribute__((vector_size(16)));
-unsigned char SRC __attribute__((vector_size(16)));
-#endif
 
 	kfpu_begin();
 
 	NEON_INIT_LOOP();
 
-	for (; ip < ipend; ip += 2) {
-		NEON_MAIN_LOOP(NEON_DONT_REVERSE);
+    for (; ip < ipend; ip += 2) {
+		NEON_SUPERSCALAR8();
 	}
 
-	NEON_FINI_LOOP();
+	NEON_FINI_LOOP1();
 
 	kfpu_end();
 }
@@ -187,13 +208,13 @@ unsigned char SRC __attribute__((vector_size(16)));
 
 	kfpu_begin();
 
-	NEON_INIT_LOOP();
+	NEON_INIT_LOOP2();
 
 	for (; ip < ipend; ip += 2) {
 		NEON_MAIN_LOOP(NEON_DO_REVERSE);
 	}
 
-	NEON_FINI_LOOP();
+	NEON_FINI_LOOP2();
 
 	kfpu_end();
 }
