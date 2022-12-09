@@ -49,12 +49,23 @@ fletcher_4_aarch64_neon_native:
         .cfi_startproc
         ldp     q4, q0, [x0]
         add     x8, x1, x2
+        mov     x9, x1
         ldp     q5, q1, [x0, #32]
         ldp     q6, q2, [x0, #64]
         ldp     q7, q3, [x0, #96]
 .LBB0_1:
-        ldr     q16, [x1], #16
-        cmp     x1, x8
+        add     x1, x1, #512
+        prfm    pldl1strm, [x9]
+        prfm    pldl1strm, [x9, #64]
+        prfm    pldl1strm, [x9, #128]
+        prfm    pldl1strm, [x9, #192]
+        prfm    pldl1strm, [x9, #256]
+        prfm    pldl1strm, [x9, #320]
+        prfm    pldl1strm, [x9, #384]
+        prfm    pldl1strm, [x9, #448]
+.LBB0_2:
+        ldr     q16, [x9], #16
+        cmp     x9, x1
         uaddw2  v0.2d, v0.2d, v16.4s
         uaddw   v4.2d, v4.2d, v16.2s
         add     v1.2d, v0.2d, v1.2d
@@ -63,6 +74,8 @@ fletcher_4_aarch64_neon_native:
         add     v6.2d, v5.2d, v6.2d
         add     v3.2d, v2.2d, v3.2d
         add     v7.2d, v6.2d, v7.2d
+        b.lo    .LBB0_2
+        cmp     x1, x8
         b.lo    .LBB0_1
         stp     q4, q0, [x0]
         stp     q5, q1, [x0, #32]
@@ -77,16 +90,26 @@ fletcher_4_aarch64_neon_native:
 	.align	3
 	.globl	fletcher_4_aarch64_neon_byteswap
 	.type	fletcher_4_aarch64_neon_byteswap,@function
-fletcher_4_aarch64_neon_byteswap:       // @fletcher_4_aarch64_neon_byteswap
+fletcher_4_aarch64_neon_byteswap:
         .cfi_startproc
         ldp     q4, q0, [x0]
         add     x8, x1, x2
         ldp     q5, q1, [x0, #32]
         ldp     q6, q2, [x0, #64]
         ldp     q7, q3, [x0, #96]
-.LBB1_1:                                // =>This Inner Loop Header: Depth=1
+.LBB1_1:
+        add     x9, x9, #512
+        prfm    pldl1strm, [x1]
+        prfm    pldl1strm, [x1, #64]
+        prfm    pldl1strm, [x1, #128]
+        prfm    pldl1strm, [x1, #192]
+        prfm    pldl1strm, [x1, #256]
+        prfm    pldl1strm, [x1, #320]
+        prfm    pldl1strm, [x1, #384]
+        prfm    pldl1strm, [x1, #448]
+.LBB1_2:
         ldr     q16, [x1], #16
-        cmp     x1, x8
+        cmp     x1, x9
         rev32   v16.16b, v16.16b
         uaddw2  v0.2d, v0.2d, v16.4s
         uaddw   v4.2d, v4.2d, v16.2s
@@ -96,6 +119,8 @@ fletcher_4_aarch64_neon_byteswap:       // @fletcher_4_aarch64_neon_byteswap
         add     v6.2d, v5.2d, v6.2d
         add     v3.2d, v2.2d, v3.2d
         add     v7.2d, v6.2d, v7.2d
+        b.lo    .LBB1_2
+        cmp     x9, x8
         b.lo    .LBB1_1
         stp     q4, q0, [x0]
         stp     q5, q1, [x0, #32]
